@@ -10,12 +10,12 @@ using System.Text.RegularExpressions;
 //using an enum prevents typos in the IDE
 enum AllowedOptions
 {
-  Options,
   Comment,
   FullName,
   IcoFile,
   IcoIndex,
   Link,
+  Options,
   Target,
   Show,
   StartIn,
@@ -45,7 +45,35 @@ namespace CreateLnk
         Environment.Exit(0);
       }
 
-      _opts = new Options(args);
+      //deal with the fact that the are the complete commandline after the Options keyword
+      List<string> filtered = new List<string>();
+      string opt = AllowedOptions.Options.ToString();
+      string rest = "";
+      int i;
+      int si = Environment.GetCommandLineArgs()[0].Length; //we know we dont want to start until after the program name
+
+
+      foreach (string s in args)
+        if (s.StartsWith(opt))
+        {
+          string full = Environment.CommandLine;
+          i = full.IndexOf(s,si) + opt.Length + 1;
+          rest = full.Substring(i);
+          filtered.Add(opt); //empty for now
+          break;
+        }
+        else
+        {
+          si += s.Length + 1; //the start index is the lengh of the parmams we want to skip + count of params to be skipped
+          filtered.Add(s);
+        }
+
+      _opts = new Options(filtered.ToArray(), true);
+
+      //if options were specified and we captured them, add them to the config
+      if (_opts.OptionExists(AllowedOptions.Options) && rest != "")
+        _opts[AllowedOptions.Options] = rest;
+
 
       if (_opts.ActiveOptions.Length < 1)
       {
@@ -78,10 +106,10 @@ namespace CreateLnk
     {
       //LinkPath
       string link = _opts[AllowedOptions.Link];
-      if (!Validate(ref link, false))
+      if (!ValidatePath(link, false))
         FatalExit("Cannot validate LinkPath:\r\n  [{0}]", link);
       string parent = Path.GetDirectoryName(link);
-      if (!ValidateDirectoryPath(ref parent, true))
+      if (!ValidateDirectoryPath(parent, true))
         FatalExit("Cannot finde directory for LinkPath:\r\n  [{0}]", link);
       if (File.Exists(link))
         Push("* Link exists and will be overwritten");
@@ -89,7 +117,7 @@ namespace CreateLnk
 
       //TargetPath
       string target = _opts[AllowedOptions.Target];
-      if (!Validate(ref target, true))
+      if (!ValidatePath(target, false))
         FatalExit("Cannot validate TargetPath:\r\n  [{0}]", target);
       Verbose("{0}: {1}", AllowedOptions.Target.ToString(), target);
 
@@ -118,17 +146,17 @@ namespace CreateLnk
             FatalExit("Cannot validate WindowStyle:\r\n  [{0}]", sWindowStyle);
             break;
         }
-      Verbose("{0}: {1} [{2}]", AllowedOptions.Show.ToString(), sWindowStyle, iWindowStyle);
+      Verbose("{0}: {1}", AllowedOptions.Show.ToString(), iWindowStyle);
 
       //startIn
       string startIn = _opts[AllowedOptions.StartIn];
-      if (startIn != "" && !ValidateDirectoryPath(ref startIn, true))
+      if (startIn != "" && !ValidateDirectoryPath(startIn, true))
         FatalExit("Cannot validate WorkingDirectory:\r\n  [{0}]", startIn);
       Verbose("{0}: {1}", AllowedOptions.StartIn.ToString(), startIn);
 
       //IconFile
       string iconFile = _opts[AllowedOptions.IcoFile];
-      if (iconFile != "" && !Validate(ref iconFile, true))
+      if (iconFile != "" && !ValidatePath(iconFile, true))
         FatalExit("Cannot validate IconLocation:\r\n  [{0}]", iconFile);
       Verbose("{0}: {1}", AllowedOptions.IcoFile.ToString(), iconFile);
 
@@ -137,7 +165,7 @@ namespace CreateLnk
       int iIconIndex = 0;
       if (sIconIndex != "" && !int.TryParse(sIconIndex, out iIconIndex))
         FatalExit("Cannot validate IconIndex:\r\n  [{0}]", iIconIndex);
-      Verbose("{0}: {1} [{2}]", AllowedOptions.IcoIndex.ToString(), sIconIndex, iIconIndex);
+      Verbose("{0}: {1}", AllowedOptions.IcoIndex.ToString(), iIconIndex);
 
       string comment = Regex.Replace(_opts[AllowedOptions.Comment], optionCheck, "");
       Verbose("{0}: {1}", AllowedOptions.Comment.ToString(), comment);
@@ -174,7 +202,7 @@ namespace CreateLnk
       //end CreateShortcut
     }
 
-    public static bool Validate(ref string Path, bool MustExist)
+    public static bool ValidatePath(string Path, bool MustExist)
     {
       if (Path == "") return false;
       FileInfo fi = null;
@@ -183,14 +211,12 @@ namespace CreateLnk
       catch { }
       if (fi == null) return false;
 
-      Path = fi.FullName;
-
       if (!MustExist || (MustExist && fi.Exists)) return true;
 
       return false;
     }
 
-    public static bool ValidateDirectoryPath(ref string Path, bool MustExist)
+    public static bool ValidateDirectoryPath(string Path, bool MustExist)
     {
       if (Path == "") return false;
       DirectoryInfo di = null;
@@ -198,8 +224,6 @@ namespace CreateLnk
       try { di = new DirectoryInfo(Path); }
       catch { }
       if (di == null) return false;
-
-      Path = di.FullName;
 
       if (!MustExist || (MustExist && di.Exists)) return true;
 
@@ -236,7 +260,6 @@ namespace CreateLnk
 
       sb.AppendFormat("  {0,10}: Full path to LNK file (required)\r\n", AllowedOptions.Link.ToString());
       sb.AppendFormat("  {0,10}: Full path to target (required)\r\n", AllowedOptions.Target.ToString());
-      sb.AppendFormat("  {0,10}: Options to be passed to the target\r\n", AllowedOptions.Options.ToString());
       sb.AppendFormat("  {0,10}: Normal (default), Min, Max\r\n", AllowedOptions.Show.ToString());
       sb.AppendFormat("  {0,10}: Full path to working directory\r\n", AllowedOptions.StartIn.ToString());
       sb.AppendFormat("  {0,10}: Full path to file containing icon\r\n", AllowedOptions.IcoFile.ToString());
@@ -244,11 +267,15 @@ namespace CreateLnk
       sb.AppendFormat("  {0,10}: Text for the link's description field\r\n", AllowedOptions.Comment.ToString());
       sb.AppendFormat("  {0,10}: Show result but do not create link\r\n", AllowedOptions.WhatIf.ToString());
       sb.AppendFormat("  {0,10}: Display extra info\r\n", AllowedOptions.Verbose.ToString());
+      sb.AppendFormat("  {0,10}: Options to be passed to the target\r\n", AllowedOptions.Options.ToString());
 
       //sb.AppendLine("  Arguments:text - desc");
       //sb.AppendLine("  FullName:text - desc");
       //sb.AppendLine("  Hotkey:text - desc");
       //sb.AppendLine("  RelativePath:text - desc");
+
+      sb.AppendFormat("\r\n  - '{0}:' must be last, and it includes the rest of the commandline\r\n", AllowedOptions.Options.ToString());
+      sb.Append("  - If you want to inlcude an un-expanded environment variable,\r\n    escape the percent signs with carrots: ^%DATE^%\r\n");
 
       Push(sb.ToString());
     }
