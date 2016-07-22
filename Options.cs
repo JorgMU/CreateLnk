@@ -5,13 +5,11 @@ using System.Text;
 class Options
 {
   public const string SPLIT_CHAR = ":";
-  public const string OPT_CHAR = "/";
 
   public static readonly char[] SPLIT_CHAR_A = SPLIT_CHAR.ToCharArray();
-  public static readonly char[] OPT_CHAR_A = OPT_CHAR.ToCharArray();
 
   private Dictionary<AllowedOptions, string> _options;
-  private bool _casesensitive;
+  private AllowedOptions? _greedyOption;
   
   //enum Helpers
   private Dictionary<string, AllowedOptions> _s2ao;
@@ -25,28 +23,18 @@ class Options
 
     foreach (AllowedOptions ao in Enum.GetValues(typeof(AllowedOptions)))
     {
-      if (_casesensitive)
-      {
-        _s2ao.Add(ao.ToString(), ao);
-        _ao2s.Add(ao, ao.ToString());
-      }
-      else
-      {
-        _s2ao.Add(ao.ToString().ToUpper(), ao);
-        _ao2s.Add(ao, ao.ToString().ToUpper());
-      }
+      _s2ao.Add(ao.ToString(), ao);
+      _ao2s.Add(ao, ao.ToString());
     }
   }
 
-  public Options(string[] args) : this(args, false) {}
-
-  public Options(string[] args, bool CaseSensitive)
+  public Options(string[] args, AllowedOptions? GreedyOption)
   {
+    _greedyOption = GreedyOption;
     _options = new Dictionary<AllowedOptions, string>();
     _activeOptions = new List<AllowedOptions>();
-    _casesensitive = CaseSensitive;
     buildEnumHelpers();
-    _options = parse(args, CaseSensitive);
+    _options = parse(args);
     _activeOptions = new List<AllowedOptions>(_options.Keys);
   }
 
@@ -78,28 +66,46 @@ class Options
     }
   }
 
-  private Dictionary<AllowedOptions,string> parse(string[] args, bool IsCaseSensitive)
+  private Dictionary<AllowedOptions,string> parse(string[] args)
   {
     Dictionary<AllowedOptions, string> result = new Dictionary<AllowedOptions, string>();
 
-    foreach (string s in args)
-    {
-      string[] parts = s.Split(SPLIT_CHAR_A, 2, StringSplitOptions.RemoveEmptyEntries);
+    //establish a cursor and cl in case their is a greedy option 
+    int cursor = Environment.GetCommandLineArgs()[0].Length; //start checking after the program name
+    string cmdline = Environment.CommandLine;
 
-      string key;
-      if (IsCaseSensitive) key = parts[0].Trim(OPT_CHAR_A).Trim();
-      else key = parts[0].ToUpper().Trim(OPT_CHAR_A).Trim();
+    string goName = "";
+    if (HasGreedyOption) goName = _ao2s[(AllowedOptions)_greedyOption];
+    
+    foreach (string sArg in args) {
+     
+      string[] parts = sArg.Split(SPLIT_CHAR_A, 2, StringSplitOptions.RemoveEmptyEntries);
+
+      //get the key removing whitespace
+      string key = parts[0].Trim();
 
       if (_s2ao.ContainsKey(key))
       {
+        
+        cursor = cmdline.IndexOf(key, cursor) + key.Length + 1;
+
         string value = "";
+
         if (parts.Length == 2) value = parts[1];
+
+        if (HasGreedyOption && goName == key) value = cmdline.Substring(cursor);
+
         result.Add(_s2ao[key], value);
+
+        if (HasGreedyOption && goName == key) break; //quit loop if we dealt with the greedy option
+
       }
       else
       {
-        Console.WriteLine("* Ignoring invalid option: " + key);
+        Console.WriteLine("* Invalid option: " + key);
+        Environment.Exit(-1);
       }
+
     }
 
     return result;
@@ -116,9 +122,13 @@ class Options
     get { return _activeOptions.ToArray(); }
   }
 
+  public bool HasGreedyOption { get { return _greedyOption != null; } }
+
+  public AllowedOptions? GreedyOption {  get { return _greedyOption; } }
+
   public override string ToString()
   {
-    StringBuilder result = new StringBuilder("Raw Options: \r\n");
+    StringBuilder result = new StringBuilder("Active Options: \r\n");
     foreach(AllowedOptions o in _ao2s.Keys)
       if(_options.ContainsKey(o))
       result.AppendFormat(" - {0}: {1}\r\n", _ao2s[o], _options[o]);

@@ -45,35 +45,7 @@ namespace CreateLnk
         Environment.Exit(0);
       }
 
-      //deal with the fact that the are the complete commandline after the Options keyword
-      List<string> filtered = new List<string>();
-      string opt = AllowedOptions.Options.ToString();
-      string rest = "";
-      int i;
-      int si = Environment.GetCommandLineArgs()[0].Length; //we know we dont want to start until after the program name
-
-
-      foreach (string s in args)
-        if (s.StartsWith(opt))
-        {
-          string full = Environment.CommandLine;
-          i = full.IndexOf(s,si) + opt.Length + 1;
-          rest = full.Substring(i);
-          filtered.Add(opt); //empty for now
-          break;
-        }
-        else
-        {
-          si += s.Length + 1; //the start index is the lengh of the parmams we want to skip + count of params to be skipped
-          filtered.Add(s);
-        }
-
-      _opts = new Options(filtered.ToArray(), true);
-
-      //if options were specified and we captured them, add them to the config
-      if (_opts.OptionExists(AllowedOptions.Options) && rest != "")
-        _opts[AllowedOptions.Options] = rest;
-
+      _opts = new Options(args, AllowedOptions.Options);
 
       if (_opts.ActiveOptions.Length < 1)
       {
